@@ -255,7 +255,7 @@ export const PlayerControls: React.FC<Props> = ({
         {/* Row 2: Media Navigation Buttons & Time Display */}
         <div className="flex items-center justify-between border-t border-white/10 pt-1.5 px-0.5">
           {/* Time Counter */}
-          <div className="text-[10px] font-mono tracking-wider text-white/70">
+          <div className="text-[10px] font-mono tracking-wider text-white/70 tabular-nums min-w-[72px]">
             <span className="text-white font-bold">{formatTime(currentTime)}</span>
             <span> / {formatTime(duration)}</span>
           </div>
@@ -346,10 +346,10 @@ export const PlayerControls: React.FC<Props> = ({
         </div>
       </div>
 
-      {/* DESKTOP & TABLET VIEW (>= sm) */}
-      <div className="hidden sm:flex px-4 py-2.5 items-center justify-between gap-4">
+      {/* DESKTOP & TABLET VIEW (>= sm): Strictly anchored 3-column CSS Grid to eliminate layout shifting on song change */}
+      <div className="hidden sm:grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] px-4 py-2.5 items-center gap-4">
         {/* LEFT: Current Track Info */}
-        <div className="flex items-center gap-3.5 min-w-0 max-w-[280px] lg:max-w-xs">
+        <div className="flex items-center gap-3.5 min-w-0 max-w-[320px] lg:max-w-xs justify-self-start">
           {/* Cover Thumbnail */}
           <div className="relative w-12 h-12 bg-black border-2 border-black flex-shrink-0 overflow-hidden shadow-[2px_2px_0px_#000]">
             {currentTrack?.coverUrl ? (
@@ -427,8 +427,8 @@ export const PlayerControls: React.FC<Props> = ({
           )}
         </div>
 
-        {/* CENTER: Main Playback Controls & Time */}
-        <div className="flex flex-col items-center justify-center gap-1">
+        {/* CENTER: Main Playback Controls & Time (Locked dead-center) */}
+        <div className="flex flex-col items-center justify-center gap-1 justify-self-center select-none">
           <div className="flex items-center gap-3 md:gap-5">
             {/* Shuffle Button */}
             <button
@@ -436,7 +436,7 @@ export const PlayerControls: React.FC<Props> = ({
                 playP5Sound('toggle');
                 onToggleShuffle();
               }}
-              className="p-1.5 transition-colors cursor-pointer"
+              className="p-1.5 transition-colors cursor-pointer w-7 h-7 flex items-center justify-center"
               style={{
                 color: isShuffle ? currentTheme.accent : 'rgba(255,255,255,0.4)',
               }}
@@ -451,7 +451,7 @@ export const PlayerControls: React.FC<Props> = ({
                 playP5Sound('slash');
                 onPrevTrack();
               }}
-              className="p-1.5 text-white/80 hover:text-white hover:scale-110 active:scale-90 transition-all cursor-pointer"
+              className="p-1.5 text-white/80 hover:text-white hover:scale-110 active:scale-90 transition-all cursor-pointer w-8 h-8 flex items-center justify-center"
               title="Previous Track"
             >
               <SkipBack className="w-5 h-5" />
@@ -463,7 +463,7 @@ export const PlayerControls: React.FC<Props> = ({
                 playP5Sound('slash');
                 onTogglePlay();
               }}
-              className="relative p-3 border-2 border-black transform hover:scale-105 active:scale-95 transition-all cursor-pointer shadow-[3px_3px_0px_#000]"
+              className="relative p-3 border-2 border-black transform hover:scale-105 active:scale-95 transition-all cursor-pointer shadow-[3px_3px_0px_#000] w-12 h-12 flex items-center justify-center"
               style={{
                 backgroundColor: currentTheme.accent,
                 color: currentTheme.textOnAccent,
@@ -484,7 +484,7 @@ export const PlayerControls: React.FC<Props> = ({
                 playP5Sound('slash');
                 onNextTrack();
               }}
-              className="p-1.5 text-white/80 hover:text-white hover:scale-110 active:scale-90 transition-all cursor-pointer"
+              className="p-1.5 text-white/80 hover:text-white hover:scale-110 active:scale-90 transition-all cursor-pointer w-8 h-8 flex items-center justify-center"
               title="Next Track"
             >
               <SkipForward className="w-5 h-5" />
@@ -496,7 +496,7 @@ export const PlayerControls: React.FC<Props> = ({
                 playP5Sound('toggle');
                 onToggleRepeat();
               }}
-              className="p-1.5 transition-colors cursor-pointer"
+              className="p-1.5 transition-colors cursor-pointer w-7 h-7 flex items-center justify-center"
               style={{
                 color: repeatMode !== 'off' ? currentTheme.accent : 'rgba(255,255,255,0.4)',
               }}
@@ -510,16 +510,16 @@ export const PlayerControls: React.FC<Props> = ({
             </button>
           </div>
 
-          {/* Time Counter */}
-          <div className="flex items-center gap-1.5 text-[11px] font-mono tracking-wider text-white/60">
-            <span className="text-white font-bold">{formatTime(currentTime)}</span>
-            <span>/</span>
-            <span>{formatTime(duration)}</span>
+          {/* Time Counter with non-shifting Tabular Figures */}
+          <div className="flex items-center gap-1.5 text-[11px] font-mono tracking-wider text-white/60 tabular-nums">
+            <span className="text-white font-bold inline-block min-w-[34px] text-right">{formatTime(currentTime)}</span>
+            <span className="text-white/40">/</span>
+            <span className="inline-block min-w-[34px] text-left">{formatTime(duration)}</span>
           </div>
         </div>
 
         {/* RIGHT: Extra Audio Controls */}
-        <div className="flex items-center gap-2 md:gap-3">
+        <div className="flex items-center gap-2 md:gap-3 justify-self-end">
           {/* Synchronized Lyrics Toggle */}
           <button
             onClick={() => {

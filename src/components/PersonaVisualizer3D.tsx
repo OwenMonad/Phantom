@@ -57,6 +57,7 @@ export const PersonaVisualizer3D: React.FC<Props> = ({
   const lyricsPromptRef = useRef<HTMLButtonElement>(null);
   const queueStageRef = useRef<HTMLDivElement>(null);
   const queueCardStackRef = useRef<HTMLDivElement>(null);
+  const updateTrackCoverRef = useRef<((track: Track | null) => void) | null>(null);
 
   // Queue expansion state (defaulting to always visible)
   const [internalQueueExpanded, setInternalQueueExpanded] = useState(true);
@@ -136,13 +137,18 @@ export const PersonaVisualizer3D: React.FC<Props> = ({
     autoRotateRef.current = autoRotate;
   }, [autoRotate]);
 
-  // Current lyric line
+  // Current lyric line with tighter vocal onset sync and instrumental intro awareness
   const activeLyric = useMemo(() => {
     if (!currentTrack?.lyrics || currentTrack.lyrics.length === 0) return null;
     const lyrics = currentTrack.lyrics;
+    // Add 0.12s vocal onset lead anticipation so lyrics show on singer onset rather than delayed
+    const syncTime = currentTime + 0.12;
+    // If before first lyric line, respect instrumental intro
+    if (syncTime < lyrics[0].time) return null;
+
     let found = lyrics[0];
     for (let i = 0; i < lyrics.length; i++) {
-      if (currentTime >= lyrics[i].time) {
+      if (syncTime >= lyrics[i].time) {
         found = lyrics[i];
       } else {
         break;
@@ -150,6 +156,13 @@ export const PersonaVisualizer3D: React.FC<Props> = ({
     }
     return found?.text || null;
   }, [currentTrack, currentTime]);
+
+  // Smoothly update track texture/colors without rebuilding the 3D scene
+  useEffect(() => {
+    if (updateTrackCoverRef.current) {
+      updateTrackCoverRef.current(currentTrack);
+    }
+  }, [currentTrack?.id, currentTrack?.coverUrl, currentTrack?.title, currentTrack?.artist]);
 
   useEffect(() => {
     if (!containerRef.current || !canvasRef.current) return;
@@ -346,6 +359,36 @@ export const PersonaVisualizer3D: React.FC<Props> = ({
     particlesMesh = new THREE.Points(pGeometry, pMaterial);
     particlesGroup.add(particlesMesh);
 
+    // Function to draw procedural fallback cover
+    const renderProceduralCover = (title?: string, artist?: string) => {
+      coverCtx.clearRect(0, 0, 1024, 1024);
+      coverCtx.fillStyle = '#0c0e15';
+      coverCtx.fillRect(0, 0, 1024, 1024);
+      coverCtx.fillStyle = currentTheme.accent;
+      coverCtx.beginPath();
+      coverCtx.moveTo(0, 640);
+      coverCtx.lineTo(1024, 400);
+      coverCtx.lineTo(1024, 720);
+      coverCtx.lineTo(0, 960);
+      coverCtx.fill();
+
+      coverCtx.fillStyle = '#ffffff';
+      coverCtx.font = '900 64px sans-serif';
+      coverCtx.textAlign = 'center';
+      coverCtx.fillText((title || 'PHANTOM').substring(0, 18).toUpperCase(), 512, 520);
+
+      coverCtx.fillStyle = '#ffd700';
+      coverCtx.font = '700 36px monospace';
+      coverCtx.fillText((artist || 'AUDIO PLAYER').substring(0, 24).toUpperCase(), 512, 600);
+
+      coverTexture.needsUpdate = true;
+      if (particlesMesh) {
+        const colors = particlesMesh.geometry.attributes.color.array as Float32Array;
+        sampleCoverColors(colors, numParticles, gridSize);
+        particlesMesh.geometry.attributes.color.needsUpdate = true;
+      }
+    };
+
     // Function to apply cover image immediately
     const applyCoverImage = (img: HTMLImageElement) => {
       coverCtx.clearRect(0, 0, 1024, 1024);
@@ -358,16 +401,23 @@ export const PersonaVisualizer3D: React.FC<Props> = ({
       }
     };
 
-    // When cover image loads, refresh texture & particle colors instantly
-    if (currentTrack?.coverUrl) {
-      const img = new Image();
-      img.crossOrigin = 'anonymous';
-      img.onload = () => applyCoverImage(img);
-      img.src = currentTrack.coverUrl;
-      if (img.complete && img.naturalWidth > 0) {
-        applyCoverImage(img);
+    // Global texture updater registered on ref for smooth song switching without rebuilding 3D scene
+    const updateTrackCover = (track: Track | null) => {
+      if (track?.coverUrl) {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => applyCoverImage(img);
+        img.src = track.coverUrl;
+        if (img.complete && img.naturalWidth > 0) {
+          applyCoverImage(img);
+        }
+      } else {
+        renderProceduralCover(track?.title, track?.artist);
       }
-    }
+    };
+
+    updateTrackCoverRef.current = updateTrackCover;
+    updateTrackCover(currentTrack);
 
     // HOVER ENERGY RING: An orbital halo of sparkling star points crowning the outer canvas edge
     const haloCount = 140;
@@ -1066,10 +1116,10 @@ export const PersonaVisualizer3D: React.FC<Props> = ({
       labelMat.dispose();
       spectrumCoverGeo.dispose();
       spectrumCoverMat.dispose();
-      coverTexture.dispose();
+      updateTrackCoverRef.current = null;
       renderer.dispose();
     };
-  }, [mode, currentTrack, currentTheme]);
+  }, [mode, currentTheme]);
 
   // Pointer drag to orbit, multi-touch pinch to zoom, OR right-click / shift-drag to move
   const handlePointerDown = (e: React.PointerEvent) => {

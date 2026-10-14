@@ -51,10 +51,12 @@ function openDB(): Promise<IDBDatabase> {
  * Converts a runtime Track into a persistable record with real audio & image Blobs
  */
 async function trackToRecord(track: Track): Promise<StoredTrackRecord> {
-  let fileBlob: Blob | undefined = track.file;
+  const isDemo = track.isDemo || track.id.startsWith('p5-demo-');
+  let fileBlob: Blob | undefined = isDemo ? undefined : track.file;
 
-  // If track.file was somehow absent but blob URL exists, extract the blob
-  if (!fileBlob && track.url && track.url.startsWith('blob:')) {
+  // If track.file was absent but blob URL exists, extract the blob ONLY for non-demo imported user tracks!
+  // Synthetic demo tracks generate massive 14MB uncompressed WAVs in memory that must NEVER be persisted to IndexedDB!
+  if (!isDemo && !fileBlob && track.url && track.url.startsWith('blob:')) {
     try {
       const res = await fetch(track.url);
       fileBlob = await res.blob();
@@ -246,3 +248,113 @@ export async function updateTrackFavoriteInStorage(id: string, isFavorite: boole
     // Fail-safe
   }
 }
+
+/**
+ * Updates lyrics only, without re-fetching or duplicating audio blobs in IndexedDB
+ */
+export async function updateTrackLyricsInStorage(id: string, lyrics: LyricLine[]): Promise<void> {
+  try {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      const store = tx.objectStore(STORE_NAME);
+      const getReq = store.get(id);
+
+      getReq.onsuccess = () => {
+        const record = getReq.result as StoredTrackRecord | undefined;
+        if (record) {
+          record.lyrics = lyrics;
+          store.put(record);
+        }
+        resolve();
+      };
+      getReq.onerror = () => reject(getReq.error);
+    });
+  } catch {
+    // Fail-safe
+  }
+}
+
+/**
+ * Calculates current IndexedDB and browser storage usage
+ */
+export async function getStorageUsage(): Promise<{ usedBytes: number; quotaBytes: number; trackCount: number }> {
+  let usedBytes = 0;
+  let quotaBytes = 0;
+  let trackCount = 0;
+
+  if (typeof navigator !== 'undefined' && navigator.storage && navigator.storage.estimate) {
+    try {
+      const est = await navigator.storage.estimate();
+      usedBytes = est.usage || 0;
+      quotaBytes = est.quota || 0;
+    } catch {
+      // ignore
+    }
+  }
+
+  try {
+    const db = await openDB();
+    trackCount = await new Promise<number>((resolve) => {
+      const tx = db.transaction(STORE_NAME, 'readonly');
+      const store = tx.objectStore(STORE_NAME);
+      const req = store.count();
+      req.onsuccess = () => resolve(req.result || 0);
+      req.onerror = () => resolve(0);
+    });
+  } catch {
+    // ignore
+  }
+
+  return { usedBytes, quotaBytes, trackCount };
+}
+
+/**
+ * Purges bloated synthetic demo audio blobs and compacts the storage
+ */
+export async function cleanupIndexedDB(): Promise<void> {
+  try {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      const store = tx.objectStore(STORE_NAME);
+      const req = store.getAll();
+
+      req.onsuccess = () => {
+        const records = (req.result || []) as StoredTrackRecord[];
+        for (const rec of records) {
+          if (rec.id.startsWith('p5-demo-') || rec.isDemo) {
+            // Delete synthetic demo blobs that balloon storage
+            if (rec.fileBlob) {
+              rec.fileBlob = undefined;
+              store.put(rec);
+            }
+          }
+        }
+        resolve();
+      };
+      req.onerror = () => reject(req.error);
+    });
+  } catch {
+    // ignore
+  }
+}
+
+/**
+ * Completely clears all tracks from IndexedDB
+ */
+export async function clearAllStoredTracks(): Promise<void> {
+  try {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      const store = tx.objectStore(STORE_NAME);
+      const req = store.clear();
+      req.onsuccess = () => resolve();
+      req.onerror = () => reject(req.error);
+    });
+  } catch {
+    // ignore
+  }
+}
+

@@ -27,6 +27,8 @@ import {
   saveTrackToStorage,
   deleteTrackFromStorage,
   updateTrackFavoriteInStorage,
+  updateTrackLyricsInStorage,
+  cleanupIndexedDB,
 } from './utils/trackStorage';
 import { recordPlaybackHistory } from './utils/historyStorage';
 
@@ -85,6 +87,7 @@ export default function App() {
   // Load previously scanned music library from offline IndexedDB storage on startup
   useEffect(() => {
     let isMounted = true;
+    cleanupIndexedDB().catch(() => {});
     loadStoredTracks().then((storedTracks) => {
       if (!isMounted) return;
       if (storedTracks.length > 0) {
@@ -327,17 +330,14 @@ export default function App() {
     }
   };
 
-  // Save lyrics to track and persist permanently in IndexedDB
+  // Save lyrics to track and persist permanently in IndexedDB without re-storing audio blobs
   const handleSaveLyrics = async (trackId: string, lyrics: LyricLine[]) => {
     const updated = tracks.map((t) => (t.id === trackId ? { ...t, lyrics } : t));
     setTracks(updated);
     if (currentTrack?.id === trackId) {
       setCurrentTrack((prev) => (prev ? { ...prev, lyrics } : null));
     }
-    const targetTrack = updated.find((t) => t.id === trackId);
-    if (targetTrack) {
-      await saveTrackToStorage(targetTrack);
-    }
+    await updateTrackLyricsInStorage(trackId, lyrics);
   };
 
   // Automatic online lyrics stream whenever a track is played without lyrics

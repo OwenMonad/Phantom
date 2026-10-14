@@ -20,11 +20,54 @@ export class AudioEngine {
   private freqData: Uint8Array = new Uint8Array(128);
   private timeData: Uint8Array = new Uint8Array(128);
   private isInitialized = false;
+  private timeListeners: Set<(currentTime: number, duration: number) => void> = new Set();
+  private timeTickerId: number | null = null;
 
   constructor() {
     this.audio = new Audio();
     this.audio.crossOrigin = 'anonymous';
     this.audio.preload = 'auto';
+
+    // Native timeupdate as backstop
+    this.audio.addEventListener('timeupdate', () => {
+      this.dispatchTimeUpdate();
+    });
+
+    this.audio.addEventListener('play', () => {
+      this.startTimeTicker();
+    });
+
+    this.audio.addEventListener('pause', () => {
+      this.stopTimeTicker();
+      this.dispatchTimeUpdate();
+    });
+
+    this.audio.addEventListener('ended', () => {
+      this.stopTimeTicker();
+      this.dispatchTimeUpdate();
+    });
+  }
+
+  private startTimeTicker(): void {
+    if (this.timeTickerId !== null) return;
+    this.timeTickerId = window.setInterval(() => {
+      if (!this.audio.paused && this.timeListeners.size > 0) {
+        this.dispatchTimeUpdate();
+      }
+    }, 45); // ~22 updates/sec - perfectly responsive lyrics sync with zero audio lag
+  }
+
+  private stopTimeTicker(): void {
+    if (this.timeTickerId !== null) {
+      clearInterval(this.timeTickerId);
+      this.timeTickerId = null;
+    }
+  }
+
+  private dispatchTimeUpdate(): void {
+    const cur = this.audio.currentTime || 0;
+    const dur = this.audio.duration || 0;
+    this.timeListeners.forEach((cb) => cb(cur, dur));
   }
 
   public initContext(): void {
@@ -233,11 +276,12 @@ export class AudioEngine {
   }
 
   public onTimeUpdate(callback: (currentTime: number, duration: number) => void): () => void {
-    const handler = () => {
-      callback(this.audio.currentTime, this.audio.duration || 0);
+    this.timeListeners.add(callback);
+    // Initial call
+    callback(this.audio.currentTime || 0, this.audio.duration || 0);
+    return () => {
+      this.timeListeners.delete(callback);
     };
-    this.audio.addEventListener('timeupdate', handler);
-    return () => this.audio.removeEventListener('timeupdate', handler);
   }
 
   public onEnded(callback: () => void): () => void {
